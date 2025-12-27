@@ -8,8 +8,7 @@ import json
 load_dotenv()
 
 client = OpenAI(
-    api_key=os.getenv("GEMINI_API_KEY"),
-    base_url=os.getenv("GEMINI_BASE_URL")
+    api_key=os.getenv("GEMINI_API_KEY"), base_url=os.getenv("GEMINI_BASE_URL")
 )
 
 SYSTEM_PROMPT = """
@@ -45,12 +44,10 @@ SYSTEM_PROMPT = """
     OUTPUT: { "step": "OUTPUT", "content": "The weather in New York is 20°C" }
 """
 
-message_history = [
-    { "role": "system", "content": SYSTEM_PROMPT }
-]
+message_history = [{"role": "system", "content": SYSTEM_PROMPT}]
+
 
 def run():
-    
     while True:
         print("\n")
         user_input = input("> ")
@@ -58,12 +55,12 @@ def run():
         if user_input.lower() == "exit":
             break
 
-        message_history.append({ "role": "user", "content": user_input })
+        message_history.append({"role": "user", "content": user_input})
         while True:
             response = client.chat.completions.parse(
                 model="gemini-2.5-flash",
                 messages=message_history,
-                response_format=OutputFormat
+                response_format=OutputFormat,
             )
 
             result = response.choices[0].message.parsed
@@ -71,7 +68,9 @@ def run():
             if message_history and message_history[-1]["role"] == "assistant":
                 message_history[-1]["content"] += "\n" + json.dumps(result.model_dump())
             else:
-                message_history.append({ "role": "assistant", "content": json.dumps(result.model_dump()) })
+                message_history.append(
+                    {"role": "assistant", "content": json.dumps(result.model_dump())}
+                )
 
             if result.step == "START":
                 print("START: ", result.content)
@@ -84,18 +83,19 @@ def run():
                     tool_result = available_tools[result.tool](result.input)
                 else:
                     tool_result = "Tool not found."
-                
-                observation_json = json.dumps({
-                    "step": "OBSERVE",
-                    "tool": result.tool,
-                    "input": result.input,
-                    "output": tool_result
-                })
-                
-                message_history.append({ "role": "user", "content": observation_json })
+
+                observation_json = json.dumps(
+                    {
+                        "step": "OBSERVE",
+                        "tool": result.tool,
+                        "input": result.input,
+                        "output": tool_result,
+                    }
+                )
+
+                message_history.append({"role": "user", "content": observation_json})
                 print("OBSERVE: ", tool_result)
                 continue
             if result.step == "OUTPUT":
                 print("OUTPUT: ", result.content)
                 break
-
