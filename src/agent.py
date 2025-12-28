@@ -1,12 +1,12 @@
-from openai._exceptions import RateLimitError
-from schemas import WeatherInput
-from dotenv import load_dotenv
-from openai import OpenAI
-from tools import tools_schema, available_functions
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
 import os
+import time
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from openai import OpenAI
+from openai._exceptions import RateLimitError
+from dotenv import load_dotenv
+from schemas import WeatherInput
+from tools import tools_schema, available_functions
 
 load_dotenv()
 
