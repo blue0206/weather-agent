@@ -1,6 +1,7 @@
 import requests
 from schemas import WeatherInput
 
+
 def get_weather(input: WeatherInput) -> str:
     location = input.location
     url = f"https://wttr.in/{location.lower()}?format=%C+%t"
@@ -26,14 +27,12 @@ tools_schema = [
             "properties": {
                 "location": {
                     "type": "string",
-                    "description": "The location name for which the weather is to be retrieved."
+                    "description": "The location name for which the weather is to be retrieved.",
                 },
             },
-            "required": ["location"]
-        }
+            "required": ["location"],
+        },
     }
 ]
 
-available_functions = {
-    "get_weather": get_weather
-}
+available_functions = {"get_weather": get_weather}

@@ -14,11 +14,11 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL")
 
 if not GROQ_API_KEY or not GROQ_BASE_URL:
-    raise ValueError("Missing required environment variables: GROQ_API_KEY and GROQ_BASE_URL")
+    raise ValueError(
+        "Missing required environment variables: GROQ_API_KEY and GROQ_BASE_URL"
+    )
 
-client = OpenAI(
-    api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL
-)
+client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL)
 
 MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
 
@@ -48,7 +48,7 @@ def run() -> None:
             print("\n")
             user_input = input("> ")
 
-            if user_input.lower() == "exit": 
+            if user_input.lower() == "exit":
                 print("🤖 AI: Goodbye! 👋")
                 break
 
@@ -69,39 +69,55 @@ def run() -> None:
 
                     message_history += response.output
 
-                    function_calls = [item for item in response.output if item.type == "function_call"]
+                    function_calls = [
+                        item for item in response.output if item.type == "function_call"
+                    ]
 
                     if function_calls:
-                        with ThreadPoolExecutor(max_workers=len(function_calls)) as executor:
+                        with ThreadPoolExecutor(
+                            max_workers=len(function_calls)
+                        ) as executor:
                             futures = {}
 
                             for item in function_calls:
                                 if item.name == "get_weather":
-                                    print(f"🛠️ Tool Call: {item.name} with {item.arguments}")
+                                    print(
+                                        f"🛠️ Tool Call: {item.name} with {item.arguments}"
+                                    )
 
-                                    weather_input = WeatherInput(**json.loads(item.arguments))
+                                    weather_input = WeatherInput(
+                                        **json.loads(item.arguments)
+                                    )
 
-                                    future = executor.submit(available_functions[item.name], weather_input)
+                                    future = executor.submit(
+                                        available_functions[item.name], weather_input
+                                    )
                                     futures[future] = item.call_id
                                 else:
-                                    print(f"🛠️ Tool Call: Sorry, I could not call the tool: {item.name}")
-                            
+                                    print(
+                                        f"🛠️ Tool Call: Sorry, I could not call the tool: {item.name}"
+                                    )
+
                             for future in as_completed(futures):
                                 call_id = futures[future]
                                 try:
                                     weather = future.result()
-                                    message_history.append({
-                                        "type": "function_call_output",
-                                        "call_id": call_id,
-                                        "output": json.dumps({"weather": weather})
-                                    })
+                                    message_history.append(
+                                        {
+                                            "type": "function_call_output",
+                                            "call_id": call_id,
+                                            "output": json.dumps({"weather": weather}),
+                                        }
+                                    )
                                 except Exception as e:
                                     print(f"Error executing tool: {e}")
-                                    message_history.append({
-                                        "type": "function_call_output",
-                                        "call_id": call_id,
-                                        "output": json.dumps({"error": str(e)})
-                                    })
+                                    message_history.append(
+                                        {
+                                            "type": "function_call_output",
+                                            "call_id": call_id,
+                                            "output": json.dumps({"error": str(e)}),
+                                        }
+                                    )
                         continue
                     else:
                         done = False
@@ -114,11 +130,11 @@ def run() -> None:
                                     if item_content.type == "output_text":
                                         done = True
                                         break
-                    
-                        if done: 
+
+                        if done:
                             break
 
-                except RateLimitError as e:
+                except RateLimitError:
                     print("⚠️ Rate limit hit. Waiting 60 seconds...")
                     time.sleep(60)
                     continue
