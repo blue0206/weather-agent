@@ -14,3 +14,9 @@ class OutputFormat(BaseModel):
     output: Optional[str] = Field(
         None, description="The output of the tool used in the step."
     )
+
+class WeatherInput(BaseModel):
+    city: str = Field(
+        ...,
+        description="The city name for which the weather is to be retrieved."
+    )
