@@ -1,101 +1,130 @@
+from openai._exceptions import RateLimitError
+from schemas import WeatherInput
 from dotenv import load_dotenv
 from openai import OpenAI
-from schemas import OutputFormat
-from tools import available_tools
+from tools import tools_schema, available_functions
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 import os
 import json
 
 load_dotenv()
 
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL")
+
+if not GROQ_API_KEY or not GROQ_BASE_URL:
+    raise ValueError("Missing required environment variables: GROQ_API_KEY and GROQ_BASE_URL")
+
 client = OpenAI(
-    api_key=os.getenv("GEMINI_API_KEY"), base_url=os.getenv("GEMINI_BASE_URL")
+    api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL
 )
 
+MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
+
 SYSTEM_PROMPT = """
-    You are an expert AI Assistant resolving user queries using Chain of Thought.
-    You Work on START, PLAN, TOOL, and OUTPUT steps.
-    You need to first PLAN what needs to be done. The PLAN can be multiple steps.
-    Once enough plan has been done, you can finally give an OUTPUT.
-    If you need some information from an external source, you can use the TOOL step.
+You are a helpful AI Assistant.
+If the user asks for information you don't have (like weather), you can use the available tools.
+Don't make up facts.
 
-    IMPORTANT:
-    For every tool call, wait for the OBSERVE step which is the output of the called TOOL. This will take some time as it is an API call.
-    Do not make another tool call until you get the OBSERVE step.
+Available Tools:
+get_weather(location: str): A function that returns the current weather for a specific location. It takes a single argument: location (str).
 
-    Rules:
-    - Strictly follow the given JSON output format.
-    - Only run one step at a time.
-    - The sequence of steps is: START (user input) -> PLAN (can be multiple times) -> TOOL (can be multiple times) -> OUTPUT.
-    
-    Output JSON Format:
-    { "step": "START" | "PLAN" | "TOOL" | "OBSERVE" | "OUTPUT", "content": "string", "tool": "string", "input": "string", "output": "string" }
+In case user has multiple queries, get answers for them, consolidate the tool outputs and return a single response.
 
-    Available Tools:
-    - get_weather(city: str): Takes city name as input, makes an API call to weather API, and returns the weather.
+EXAMPLES:
+Question: What is the current weather in New Delhi?
+Answer: The weather in New Delhi is sunny with a temperature of +21°C.
 
-    Example:
-    START: Hey can you tell me the weather in New York?
-    PLAN: { "step": "PLAN", "content": "It seems the user is interested in weather of New York." }
-    PLAN: { "step": "PLAN", "content": "Let's see if we have a tool to get the weather." }
-    PLAN: { "step": "PLAN", "content": "Yes, we have a tool to get the weather. Let's use it." }
-    TOOL: { "step": "TOOL", "tool": "get_weather", "input": "New York" }
-    OBSERVE: { "step": "OBSERVE", "tool": "get_weather", "input": "New York", "output": "The weather in New York is: 20°C" }
-    PLAN: { "step": "PLAN", "content": "Great! I got the weather info about New York!" }
-    OUTPUT: { "step": "OUTPUT", "content": "The weather in New York is 20°C" }
+Question: What is the current weather in New Delhi and San Francisco?
+Answer: The weather in New Delhi is sunny with a temperature of +21°C. The weather in San Francisco is rainy with a temperature of +15°C. 
 """
 
-message_history = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-
-def run():
-    while True:
-        print("\n")
-        user_input = input("> ")
-
-        if user_input.lower() == "exit":
-            break
-
-        message_history.append({"role": "user", "content": user_input})
+def run() -> None:
+    try:
+        message_history = []
         while True:
-            response = client.chat.completions.parse(
-                model="gemini-2.5-flash",
-                messages=message_history,
-                response_format=OutputFormat,
-            )
+            print("\n")
+            user_input = input("> ")
 
-            result = response.choices[0].message.parsed
-
-            if message_history and message_history[-1]["role"] == "assistant":
-                message_history[-1]["content"] += "\n" + json.dumps(result.model_dump())
-            else:
-                message_history.append(
-                    {"role": "assistant", "content": json.dumps(result.model_dump())}
-                )
-
-            if result.step == "START":
-                print("START: ", result.content)
-                continue
-            if result.step == "PLAN":
-                print("PLAN: ", result.content)
-                continue
-            if result.step == "TOOL":
-                if result.tool in available_tools:
-                    tool_result = available_tools[result.tool](result.input)
-                else:
-                    tool_result = "Tool not found."
-
-                observation_json = json.dumps(
-                    {
-                        "step": "OBSERVE",
-                        "tool": result.tool,
-                        "input": result.input,
-                        "output": tool_result,
-                    }
-                )
-
-                message_history.append({"role": "user", "content": observation_json})
-                print("OBSERVE: ", tool_result)
-                continue
-            if result.step == "OUTPUT":
-                print("OUTPUT: ", result.content)
+            if user_input.lower() == "exit": 
+                print("🤖 AI: Goodbye! 👋")
                 break
+
+            message_history.append({"role": "user", "content": user_input})
+
+            # Agent Loop
+            while True:
+                try:
+                    response = client.responses.create(
+                        model=MODEL_NAME,
+                        input=message_history,
+                        tools=tools_schema,
+                        tool_choice="auto",
+                        instructions=SYSTEM_PROMPT,
+                        temperature=0.8,
+                        parallel_tool_calls=True,
+                    )
+
+                    message_history += response.output
+
+                    function_calls = [item for item in response.output if item.type == "function_call"]
+
+                    if function_calls:
+                        with ThreadPoolExecutor(max_workers=len(function_calls)) as executor:
+                            futures = {}
+
+                            for item in function_calls:
+                                if item.name == "get_weather":
+                                    print(f"🛠️ Tool Call: {item.name} with {item.arguments}")
+
+                                    weather_input = WeatherInput(**json.loads(item.arguments))
+
+                                    future = executor.submit(available_functions[item.name], weather_input)
+                                    futures[future] = item.call_id
+                                else:
+                                    print(f"🛠️ Tool Call: Sorry, I could not call the tool: {item.name}")
+                            
+                            for future in as_completed(futures):
+                                call_id = futures[future]
+                                try:
+                                    weather = future.result()
+                                    message_history.append({
+                                        "type": "function_call_output",
+                                        "call_id": call_id,
+                                        "output": json.dumps({"weather": weather})
+                                    })
+                                except Exception as e:
+                                    print(f"Error executing tool: {e}")
+                                    message_history.append({
+                                        "type": "function_call_output",
+                                        "call_id": call_id,
+                                        "output": json.dumps({"error": str(e)})
+                                    })
+                        continue
+                    else:
+                        done = False
+                        for item in response.output:
+                            if item.type != "function_call":
+                                if item.content is None:
+                                    continue
+                                for item_content in item.content:
+                                    print(f"🤖 AI: {item_content.text}")
+                                    if item_content.type == "output_text":
+                                        done = True
+                                        break
+                    
+                        if done: 
+                            break
+
+                except RateLimitError as e:
+                    print("⚠️ Rate limit hit. Waiting 60 seconds...")
+                    time.sleep(60)
+                    continue
+
+    except KeyboardInterrupt:
+        print("\n🤖 AI: Goodbye! 👋")
+    except Exception as e:
+        print(f"Unexpected Error: {e}")
+        raise
