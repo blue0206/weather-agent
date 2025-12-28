@@ -28,7 +28,7 @@ If the user asks for information you don't have (like weather), you can use the 
 Don't make up facts.
 
 Available Tools:
-get_weather(location: str): A function that returns the current weather for a specific location. It takes a single argument: location (str).
+get_weather(location): A function that returns the current weather for a specific location. It takes a single argument: location.
 
 In case user has multiple queries, get answers for them, consolidate the tool outputs and return a single response.
 
